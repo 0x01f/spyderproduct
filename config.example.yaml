@@ -1,0 +1,38 @@
+site:
+  category_url: "https://example.com/category/widgets"
+  custom_label_0: "Widgets"
+  currency: "USD"
+
+selectors:
+  product_card: "div.product-card"
+  title:
+    selector: ".product-title"
+    attr: "text"  # text to extract visible text, or use an attribute like 'title'
+  url:
+    selector: ".product-title a"
+    attr: "href"
+  image:
+    selector: "img.product-image"
+    attr: "src"
+  description:
+    selector: ".product-description"
+    attr: "text"
+  price:
+    selector: ".price-current"
+    attr: "text"
+  old_price:
+    selector: ".price-old"
+    attr: "text"
+
+pagination:
+  # Leave values empty to let the scraper auto-detect. Provide hints to override.
+  next_selector: "a.next"
+  show_more_selector: "button.show-more"
+  pagination_links_selector: "ul.pagination a"
+  scroll_container_selector: null  # e.g., 'div.products-list' or null for window
+  scroll_wait_ms: 600
+  max_pages: 0  # 0 means unlimited
+
+playwright:
+  headless: true
+  timeout_ms: 30000
