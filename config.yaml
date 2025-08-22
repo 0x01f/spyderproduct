@@ -1,38 +1,37 @@
 site:
-  category_url: "https://example.com/category/widgets"
-  custom_label_0: "Widgets"
-  currency: "USD"
+  category_url: "https://biofa.ru/catalog/fasad/"
+  custom_label_0: "Фасад"
+  currency: "RUB"
 
 selectors:
-  product_card: "div.product-card"
+  product_card: null
   title:
-    selector: ".product-title"
-    attr: "text"  # text to extract visible text, or use an attribute like 'title'
+    selector: null
+    attr: "text"
   url:
-    selector: ".product-title a"
+    selector: null
     attr: "href"
   image:
-    selector: "img.product-image"
-    attr: "src"
+    selector: null
+    attr: "src|data-src|data-original|data-lazy|data-image"
   description:
-    selector: ".product-description"
+    selector: null
     attr: "text"
   price:
-    selector: ".price-current"
+    selector: null
     attr: "text"
   old_price:
-    selector: ".price-old"
+    selector: null
     attr: "text"
 
 pagination:
-  # Leave values empty to let the scraper auto-detect. Provide hints to override.
-  next_selector: "a.next"
-  show_more_selector: "button.show-more"
-  pagination_links_selector: "ul.pagination a"
-  scroll_container_selector: null  # e.g., 'div.products-list' or null for window
-  scroll_wait_ms: 600
-  max_pages: 0  # 0 means unlimited
+  next_selector: null
+  show_more_selector: null
+  pagination_links_selector: null
+  scroll_container_selector: null
+  scroll_wait_ms: 800
+  max_pages: 0
 
 playwright:
   headless: true
-  timeout_ms: 30000
+  timeout_ms: 45000
