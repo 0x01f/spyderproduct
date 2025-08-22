@@ -38,4 +38,4 @@ playwright:
 
 discovery:
   category_links_selector: "a[href*='/catalog/']"
-  max_category_pages: 0
+  max_category_pages: 30

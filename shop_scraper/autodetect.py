@@ -6,6 +6,20 @@ from bs4 import BeautifulSoup, Tag
 logger = logging.getLogger(__name__)
 
 _PRICE_RE = re.compile(r"(?i)(?:^|\b)(?:[$€£₽₴₸]|руб|грн|byn|uah|kzt|eur|usd)?\s*[\d\s.,]{2,}(?:\s*(?:[$€£₽₴₸]|руб|грн|byn|uah|kzt|eur|usd))?")
+_PRICE_WITH_CURRENCY_RE = re.compile(r"(?i)(?:[$€£₽₴₸]|руб|грн|byn|uah|kzt|eur|usd).*?[\d\s.,]{2,}|[\d\s.,]{2,}.*?(?:[$€£₽₴₸]|руб|грн|byn|uah|kzt|eur|usd)")
+
+
+def looks_like_price_text(text: str) -> bool:
+    return _looks_like_price_with_currency(text)
+
+
+def _looks_like_price_with_currency(text: str) -> bool:
+    if not text:
+        return False
+    t = text.strip().replace("\xa0", " ")
+    if len(t) > 128:
+        return False
+    return bool(_PRICE_WITH_CURRENCY_RE.search(t))
 
 
 def _looks_like_price(text: str) -> bool:

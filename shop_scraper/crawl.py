@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from .utils import fetch_html, soup_from_html
-from .autodetect import detect_selectors_from_soup
+from .autodetect import detect_selectors_from_soup, looks_like_price_text
 from .scrape_static import StaticScraper
 from .scrape_playwright import PlaywrightScraper
 from .models import Product
@@ -28,6 +28,37 @@ def _is_catalog_path(url: str) -> bool:
         return True
 
 
+def _extract_links_from_cards(soup: BeautifulSoup, card_selector: str, url_selector: Optional[str]) -> List[str]:
+    links: List[str] = []
+    try:
+        cards = soup.select(card_selector)
+    except Exception:
+        cards = []
+    for card in cards:
+        href = None
+        if url_selector:
+            a = card.select_one(url_selector)
+            if a:
+                href = a.get("href")
+        if not href:
+            a = card.find("a", href=True)
+            if a:
+                href = a.get("href")
+        if href:
+            links.append(href)
+    return links
+
+
+def _selector_indicates_tiles(card_selector: str) -> bool:
+    sel = card_selector or ""
+    return ("section-list" in sel) or ("section_list" in sel) or ("list-item" in sel)
+
+
+def _selector_indicates_listing(card_selector: str) -> bool:
+    sel = card_selector or ""
+    return ("section-item" in sel) or ("catalog-section-item" in sel) or ("product" in sel)
+
+
 def _discover_category_links(soup: BeautifulSoup, base_url: str, selector_hint: Optional[str]) -> List[str]:
     links: List[str] = []
     if selector_hint:
@@ -38,7 +69,33 @@ def _discover_category_links(soup: BeautifulSoup, base_url: str, selector_hint: 
                     links.append(urljoin(base_url, href))
         except Exception:
             pass
-    # Heuristic fallback: anchors inside blocks with classes that look like catalog/section/category
+    detected = detect_selectors_from_soup(soup)
+    if detected and detected.get("product_card"):
+        card_sel = detected["product_card"]
+        # Treat as tiles when selector name suggests list tiles OR no prices in cards
+        treat_as_tiles = False
+        if _selector_indicates_tiles(card_sel) and not _selector_indicates_listing(card_sel):
+            treat_as_tiles = True
+        else:
+            try:
+                cards = soup.select(card_sel)
+            except Exception:
+                cards = []
+            prices_in_cards = 0
+            for card in cards:
+                try:
+                    text = card.get_text(" ", strip=True)
+                    if looks_like_price_text(text):
+                        prices_in_cards += 1
+                except Exception:
+                    continue
+            if prices_in_cards == 0:
+                treat_as_tiles = True
+        if treat_as_tiles:
+            inner_links = _extract_links_from_cards(soup, card_sel, (detected.get("url") or {}).get("selector"))
+            for href in inner_links:
+                links.append(urljoin(base_url, href))
+    # Fallback: anchors inside catalog-like blocks
     try:
         candidates = soup.select("[class*='catalog'], [class*='section'], [class*='category'] a[href]")
         for a in candidates:
@@ -47,7 +104,7 @@ def _discover_category_links(soup: BeautifulSoup, base_url: str, selector_hint: 
                 links.append(urljoin(base_url, href))
     except Exception:
         pass
-    # Filter
+    # Filter and dedupe
     out: List[str] = []
     seen: Set[str] = set()
     for u in links:
@@ -71,7 +128,6 @@ def _derive_label(soup: BeautifulSoup, page_url: str, default_label: Optional[st
                 return text
     except Exception:
         pass
-    # Fallback to last URL segment
     try:
         path = urlparse(page_url).path.rstrip("/")
         seg = path.split("/")[-1]
@@ -111,17 +167,30 @@ class CategoryCrawler:
             soup = soup_from_html(html)
             visited.add(url)
 
-            # Try to detect if this is a product listing page
             detected = detect_selectors_from_soup(soup)
             card_sel = detected.get("product_card") if detected else None
-            has_cards = False
-            try:
-                has_cards = bool(card_sel and soup.select(card_sel))
-            except Exception:
-                has_cards = False
 
-            if has_cards:
-                # Prepare a page-specific config
+            is_listing = False
+            if card_sel:
+                if _selector_indicates_listing(card_sel) and not _selector_indicates_tiles(card_sel):
+                    is_listing = True
+                else:
+                    try:
+                        cards = soup.select(card_sel)
+                    except Exception:
+                        cards = []
+                    prices_in_cards = 0
+                    for card in cards:
+                        try:
+                            text = card.get_text(" ", strip=True)
+                            if looks_like_price_text(text):
+                                prices_in_cards += 1
+                        except Exception:
+                            continue
+                    if prices_in_cards >= 2 or (cards and prices_in_cards / max(len(cards), 1) >= 0.25):
+                        is_listing = True
+
+            if is_listing and card_sel:
                 page_config = {
                     **self.config,
                     "site": {
@@ -135,18 +204,15 @@ class CategoryCrawler:
                 products = self._scrape_page(page_config)
                 self.products.extend(products)
                 self.product_pages_visited += 1
-                continue
+            else:
+                self.category_pages_visited += 1
+                children = _discover_category_links(soup, url, self.category_links_selector)
+                for child in children:
+                    if child not in visited and child not in queue:
+                        queue.append(child)
+                if self.max_category_pages and self.category_pages_visited >= self.max_category_pages:
+                    break
 
-            # Otherwise, treat as category index and enqueue child links
-            self.category_pages_visited += 1
-            children = _discover_category_links(soup, url, self.category_links_selector)
-            for child in children:
-                if child not in visited and child not in queue:
-                    queue.append(child)
-            if self.max_category_pages and self.category_pages_visited >= self.max_category_pages:
-                break
-
-        # Reassign sequential IDs
         for i, p in enumerate(self.products, start=1):
             p.id = i
         logger.info(
@@ -158,14 +224,12 @@ class CategoryCrawler:
         return self.products
 
     def _scrape_page(self, page_config: Dict[str, Any]) -> List[Product]:
-        # Try static first
         try:
             static_scraper = StaticScraper(page_config)
             if static_scraper.can_handle():
                 return static_scraper.run()
         except Exception:
             pass
-        # Fallback to Playwright
         try:
             playwright_scraper = PlaywrightScraper(page_config)
             return playwright_scraper.run()
