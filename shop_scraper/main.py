@@ -12,6 +12,7 @@ from .scrape_static import StaticScraper
 from .scrape_playwright import PlaywrightScraper
 from .utils import fetch_html, soup_from_html
 from .autodetect import detect_selectors_from_soup
+from .crawl import CategoryCrawler
 
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def decide_static_possible(config: Dict[str, Any]) -> bool:
     return len(cards) > 0
 
 
-def run(config: Dict[str, Any], output_prefix: str) -> None:
+def run_single(config: Dict[str, Any], output_prefix: str) -> None:
     # Choose strategy
     if decide_static_possible(config):
         logger.info("Using static scraping (requests + BeautifulSoup)")
@@ -66,11 +67,20 @@ def run(config: Dict[str, Any], output_prefix: str) -> None:
     logger.info("Exported %d products from %d pages to %s.(csv|xlsx)", len(products), pages_visited, output_prefix)
 
 
+def run_crawl(config: Dict[str, Any], output_prefix: str) -> None:
+    crawler = CategoryCrawler(config)
+    products = crawler.run()
+    records = [p.to_record() for p in products]
+    export_records(records, output_prefix)
+    logger.info("Exported %d products (crawler) to %s.(csv|xlsx)", len(products), output_prefix)
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Configurable e-commerce category scraper")
     parser.add_argument("--config", required=True, help="Path to YAML config file")
     parser.add_argument("--output-prefix", required=True, help="Output file prefix (without extension)")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument("--crawl", action="store_true", help="Discover and scrape subcategory product pages from the start URL")
     return parser
 
 
@@ -81,7 +91,10 @@ def main():
     setup_logging(verbose=args.verbose)
     config = load_config(args.config)
 
-    run(config=config, output_prefix=args.output_prefix)
+    if args.crawl:
+        run_crawl(config=config, output_prefix=args.output_prefix)
+    else:
+        run_single(config=config, output_prefix=args.output_prefix)
 
 
 if __name__ == "__main__":

@@ -18,24 +18,31 @@ cp config.example.yaml config.yaml
 # Edit config.yaml to match your target site selectors
 ```
 
-3) Run:
+3) Run single page:
 
 ```bash
 python -m shop_scraper --config config.yaml --output-prefix output/products
 ```
 
-This will create `output/products.csv` and `output/products.xlsx`.
+4) Crawl catalog (auto-discover subcategories and scrape each product page):
+
+```bash
+python -m shop_scraper --config config.yaml --output-prefix output/catalog --crawl
+```
+
+This will create CSV/XLSX at the given output prefix.
 
 ## Config format
 
 See `config.example.yaml` for a fully annotated example. You must provide:
 
-- `site.category_url`: URL of the category to scrape
-- `site.custom_label_0`: Category/label to set for products
+- `site.category_url`: URL of the category (or catalog root when using `--crawl`)
+- `site.custom_label_0`: Default label/category to set for products
 - `site.currency`: Currency code or symbol to default when not found in price
-- `selectors.product_card`: CSS selector for product cards
-- Field selectors for `title`, `url`, `image`, `description`, `price`, `old_price`
-- Optional pagination hints: `next_selector`, `show_more_selector`, `pagination_links_selector`, `scroll_container_selector`
+- `selectors.*`: Optional; if omitted or null, the scraper will autodetect
+- `pagination.*`: Optional hints; leave null to auto-detect strategy
+- `discovery.category_links_selector`: Optional CSS for category links on catalog pages
+- `discovery.max_category_pages`: Optional limit to number of catalog pages to visit
 
 ## Notes
 

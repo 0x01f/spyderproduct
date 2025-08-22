@@ -1,6 +1,6 @@
 site:
-  category_url: "https://biofa.ru/catalog/fasad/"
-  custom_label_0: "Фасад"
+  category_url: "https://biofa.ru/catalog/"
+  custom_label_0: "Каталог"
   currency: "RUB"
 
 selectors:
@@ -35,3 +35,7 @@ pagination:
 playwright:
   headless: true
   timeout_ms: 45000
+
+discovery:
+  category_links_selector: "a[href*='/catalog/']"
+  max_category_pages: 0
