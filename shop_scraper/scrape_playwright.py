@@ -6,6 +6,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 from .models import Product
 from .utils import parse_price
+from .autodetect import detect_selectors_from_html
 
 
 logger = logging.getLogger(__name__)
@@ -14,8 +15,12 @@ logger = logging.getLogger(__name__)
 def _get_text_or_attr(locator, attr: Optional[str]) -> Optional[str]:
     try:
         if attr and attr != "text":
-            val = locator.get_attribute(attr)
-            return val
+            # support fallbacks like "src|data-src|data-original"
+            for a in attr.split("|"):
+                val = locator.get_attribute(a)
+                if val:
+                    return val
+            return None
         else:
             return locator.inner_text().strip()
     except Exception:
@@ -64,6 +69,19 @@ class PlaywrightScraper:
             except Exception as e:
                 logger.warning("Navigation error for %s: %s", category_url, e)
 
+            # Autodetect selectors if missing
+            if not self.selectors.get("product_card"):
+                try:
+                    html = page.content()
+                    detected = detect_selectors_from_html(html)
+                    if detected:
+                        merged = {**detected, **{k: v for k, v in self.selectors.items() if v}}
+                        self.selectors = merged
+                        self.config["selectors"] = self.selectors
+                        logger.info("Using autodetected selectors for Playwright scraping")
+                except Exception:
+                    pass
+
             # Decide pagination strategy
             show_more_selector = self.pagination.get("show_more_selector")
             next_selector = self.pagination.get("next_selector")
@@ -72,11 +90,12 @@ class PlaywrightScraper:
             scroll_wait_ms = int(self.pagination.get("scroll_wait_ms", 600))
             max_pages = int(self.pagination.get("max_pages", 0))
 
-            # Try strategies (safe counts)
             used_strategy = None
             if _safe_locator_count(page, show_more_selector) > 0:
                 used_strategy = "show_more"
                 self._run_show_more(page, show_more_selector, scroll_wait_ms)
+                # Extract after all items are loaded on the same page
+                self._extract_from_page(page, base_url=category_url)
                 self.pages_visited = 1
             elif _safe_locator_count(page, pagination_links_selector) > 0:
                 used_strategy = "pagination_links"
@@ -87,12 +106,10 @@ class PlaywrightScraper:
             else:
                 used_strategy = "infinite_scroll"
                 self._run_infinite_scroll(page, scroll_container, scroll_wait_ms)
+                self._extract_from_page(page, base_url=category_url)
                 self.pages_visited = 1
 
             logger.info("Playwright strategy: %s", used_strategy)
-
-            # After content is fully loaded, extract all visible product cards
-            self._extract_from_page(page, base_url=category_url)
 
             context.close()
             browser.close()
@@ -140,13 +157,20 @@ class PlaywrightScraper:
             seen.add(abs_href)
             try:
                 page.goto(abs_href)
+                try:
+                    page.wait_for_load_state("domcontentloaded")
+                except Exception:
+                    pass
+                self._extract_from_page(page, base_url=abs_href)
                 pages_count += 1
             except Exception:
                 continue
         self.pages_visited = pages_count
 
     def _run_next_button(self, page, next_selector: str, max_pages: int):
-        pages_count = 0
+        pages_count = 1  # count the first page as visited once we extract it
+        # Extract from the initial page first
+        self._extract_from_page(page, base_url=page.url)
         while True:
             if max_pages and pages_count >= max_pages:
                 break
@@ -159,6 +183,7 @@ class PlaywrightScraper:
                     page.wait_for_load_state("networkidle")
                 except Exception:
                     pass
+                self._extract_from_page(page, base_url=page.url)
                 pages_count += 1
             except Exception:
                 break

@@ -55,15 +55,28 @@ def fetch_html(url: str, timeout: int = 20) -> Optional[str]:
         return None
 
 
+def _get_attr_with_fallback(el, attr_spec: Optional[str]) -> Optional[str]:
+    if not el or not attr_spec:
+        return None
+    if attr_spec == "text":
+        return el.get_text(strip=True)
+    # attr fallbacks separated by '|'
+    for attr in attr_spec.split("|"):
+        val = el.get(attr)
+        if val:
+            return val
+    return None
+
+
 def bs_select_text(node, selector: str, attr: Optional[str]) -> Optional[str]:
     if not node:
         return None
     el = node.select_one(selector) if selector else None
     if not el:
         return None
-    if attr and attr != "text":
-        return el.get(attr)
-    return el.get_text(strip=True)
+    if not attr or attr == "text":
+        return el.get_text(strip=True)
+    return _get_attr_with_fallback(el, attr)
 
 
 def soup_from_html(html: str) -> BeautifulSoup:

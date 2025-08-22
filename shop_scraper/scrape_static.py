@@ -4,6 +4,7 @@ from urllib.parse import urljoin
 
 from .models import Product
 from .utils import fetch_html, soup_from_html, bs_select_text, parse_price
+from .autodetect import detect_selectors_from_soup
 
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,15 @@ class StaticScraper:
         if not html:
             return False
         soup = soup_from_html(html)
+        # Autodetect if product_card not provided
+        if not self.selectors.get("product_card"):
+            detected = detect_selectors_from_soup(soup)
+            if detected:
+                # Merge, prefer explicit config fields if any
+                merged = {**detected, **{k: v for k, v in self.selectors.items() if v}}
+                self.selectors = merged
+                self.config["selectors"] = self.selectors
+                logger.info("Using autodetected selectors for static scraping")
         card_sel = self.selectors.get("product_card")
         if not card_sel:
             return False
@@ -59,6 +69,15 @@ class StaticScraper:
                 visited_urls.add(page_url)
                 continue
             soup = soup_from_html(html)
+            # If selectors still missing, attempt autodetection here too
+            if not self.selectors.get("product_card"):
+                detected = detect_selectors_from_soup(soup)
+                if detected:
+                    merged = {**detected, **{k: v for k, v in self.selectors.items() if v}}
+                    self.selectors = merged
+                    self.config["selectors"] = self.selectors
+                    logger.info("Autodetected selectors while crawling static pages")
+
             self.pages_visited += 1
             visited_urls.add(page_url)
 

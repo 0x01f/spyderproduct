@@ -11,6 +11,7 @@ from .models import Product
 from .scrape_static import StaticScraper
 from .scrape_playwright import PlaywrightScraper
 from .utils import fetch_html, soup_from_html
+from .autodetect import detect_selectors_from_soup
 
 
 logger = logging.getLogger(__name__)
@@ -25,12 +26,21 @@ def decide_static_possible(config: Dict[str, Any]) -> bool:
     url = config.get("site", {}).get("category_url")
     selectors = config.get("selectors", {})
     card_sel = selectors.get("product_card")
-    if not url or not card_sel:
+    if not url:
         return False
     html = fetch_html(url)
     if not html:
         return False
     soup = soup_from_html(html)
+    if not card_sel:
+        detected = detect_selectors_from_soup(soup)
+        if detected and detected.get("product_card"):
+            # Stash detected selectors into config so static scraper can use them
+            merged = {**detected, **{k: v for k, v in selectors.items() if v}}
+            config["selectors"] = merged
+            card_sel = merged.get("product_card")
+    if not card_sel:
+        return False
     cards = soup.select(card_sel)
     return len(cards) > 0
 
